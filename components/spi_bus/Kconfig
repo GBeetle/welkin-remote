@@ -1,0 +1,15 @@
+menu "spi_bus"
+
+    config MPU_SPI
+        bool "enable mpu spi"
+        default "y"
+
+    config BMP_SPI
+        bool "enable bmp280 spi"
+        default "y"
+
+    config NRF24_SPI
+        bool "enable nrf24 spi"
+        default "y"
+
+endmenu

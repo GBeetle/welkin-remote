@@ -1,0 +1,7 @@
+menu "log_system"
+
+config LOG_SYSTEM
+    bool "enable log system"
+    default "y"
+
+endmenu
