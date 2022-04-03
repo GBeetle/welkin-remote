@@ -49,6 +49,39 @@
 #include "task_manager.h"
 #include "isr_manager.h"
 #include "nrf24_interface.h"
+#include "tinyusb.h"
+#include "tusb_cdc_acm.h"
+
+#define CONFIG_TINYUSB_CDC_RX_BUFSIZE 64
+
+static const char *TAG = "example";
+static uint8_t buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
+
+void tinyusb_cdc_rx_callback(int itf, cdcacm_event_t *event)
+{
+    /* initialization */
+    size_t rx_size = 0;
+
+    /* read */
+    esp_err_t ret = tinyusb_cdcacm_read(itf, buf, CONFIG_TINYUSB_CDC_RX_BUFSIZE, &rx_size);
+    if (ret == ESP_OK) {
+        buf[rx_size] = '\0';
+        ESP_LOGI(TAG, "Got data (%d bytes): %s", rx_size, buf);
+    } else {
+        ESP_LOGE(TAG, "Read error");
+    }
+
+    /* write back */
+    tinyusb_cdcacm_write_queue(itf, buf, rx_size);
+    tinyusb_cdcacm_write_flush(itf, 0);
+}
+
+void tinyusb_cdc_line_state_changed_callback(int itf, cdcacm_event_t *event)
+{
+    int dtr = event->line_state_changed_data.dtr;
+    int rst = event->line_state_changed_data.rts;
+    ESP_LOGI(TAG, "Line state changed! dtr:%d, rst:%d", dtr, rst);
+}
 
 //Main application
 void app_main(void)
@@ -66,6 +99,28 @@ void app_main(void)
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, 2*1024, 0, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(UART_NUM_0, &uart_config));
 
+    ESP_LOGI(TAG, "USB initialization");
+    tinyusb_config_t tusb_cfg = {}; // the configuration using default values
+    ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
+
+    tinyusb_config_cdcacm_t amc_cfg = {
+        .usb_dev = TINYUSB_USBDEV_0,
+        .cdc_port = TINYUSB_CDC_ACM_0,
+        .rx_unread_buf_sz = 64,
+        .callback_rx = &tinyusb_cdc_rx_callback, // the first way to register a callback
+        .callback_rx_wanted_char = NULL,
+        .callback_line_state_changed = NULL,
+        .callback_line_coding_changed = NULL
+    };
+
+    ESP_ERROR_CHECK(tusb_cdc_acm_init(&amc_cfg));
+    /* the second way to register a callback */
+    ESP_ERROR_CHECK(tinyusb_cdcacm_register_callback(
+                        TINYUSB_CDC_ACM_0,
+                        CDC_EVENT_LINE_STATE_CHANGED,
+                        &tinyusb_cdc_line_state_changed_callback));
+    ESP_LOGI(TAG, "USB initialization DONE");
+#if 0
     /* test for NRF24+ commnuitation */
     rf24_init(&radio);
     // Let these addresses be used for the pair
@@ -105,7 +160,5 @@ void app_main(void)
     xTaskCreate(mpu_get_sensor_data, "mpu_get_sensor_data", 2048, NULL, 2 | portPRIVILEGE_BIT, &mpu_isr_handle);
     xTaskCreate(uart_rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES, NULL);
     //vTaskStartScheduler();
-
-    while (true) {
-    }
+#endif
 }

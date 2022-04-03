@@ -19,7 +19,6 @@
 
 uint32_t isr_counter = 0;
 uint8_t rx_command_id = 0x00;
-TaskHandle_t mpu_isr_handle;
 
 isr_manager_t mpu_isr_manager = {
     .mpu_isr_status = DATA_NOT_READY,
@@ -27,21 +26,6 @@ isr_manager_t mpu_isr_manager = {
     .mpu_accel_data_status = DATA_NOT_READY,
     .mpu_mag_data_status = DATA_NOT_READY
 };
-
-#ifdef MPU_INT_ENABLE
-void mpu_dmp_isr_handler(void* arg)
-{
-    mpu_isr_manager.mpu_isr_status = DATA_READY;
-    isr_counter++;
-    //ets_printf("isr before:[%s] stat:[%d] prid:[%d]\n", pcTaskGetTaskName(mpu_isr_handle), eTaskGetState(mpu_isr_handle), uxTaskPriorityGetFromISR(mpu_isr_handle));
-    //xTaskResumeFromISR(mpu_isr_handle);
-    //ets_printf("isr after:[%s] stat:[%d]\n", pcTaskGetTaskName(mpu_isr_handle), eTaskGetState(mpu_isr_handle));
-    /* Notify the task that the transmission is complete. */
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    vTaskNotifyGiveFromISR(mpu_isr_handle, &xHigherPriorityTaskWoken);
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}
-#endif
 
 /*
  * Define UART interrupt subroutine to ackowledge interrupt
