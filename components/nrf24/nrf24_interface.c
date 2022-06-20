@@ -380,7 +380,7 @@ static WK_RESULT ce(struct rf24 *nrf24, bool level)
 
 static inline void beginTransaction(struct rf24 *nrf24)
 {
-    return nrf24->csn(nrf24, RF_LOW);
+    nrf24->csn(nrf24, RF_LOW);
 }
 
 /****************************************************************************/
@@ -424,6 +424,7 @@ static WK_RESULT write_register(struct rf24 *nrf24, uint8_t reg, uint8_t value, 
     WK_RESULT res = WK_OK;
 
     nrf24->beginTransaction(nrf24);
+    //WK_DEBUGI(RF24_TAG, "write_register begin status: %d\r\n", nrf24->status);
     if (is_cmd_only) {
         CHK_RES(nrf24->bus->writeByte(nrf24->bus, nrf24->addr, 0x00, W_REGISTER | reg));
     }
@@ -433,9 +434,10 @@ static WK_RESULT write_register(struct rf24 *nrf24, uint8_t reg, uint8_t value, 
         CHK_RES(nrf24->bus->readWriteBytes(nrf24->bus, nrf24->addr, 0x00, 2, nrf24->spi_rxbuff, nrf24->spi_txbuff));
         nrf24->status = nrf24->spi_rxbuff[0];
     }
+    //WK_DEBUGI(RF24_TAG, "write_register end status: %d\r\n", nrf24->status);
 error_exit:
     nrf24->endTransaction(nrf24);
-    
+
     return res;
 }
 
@@ -448,9 +450,11 @@ static WK_RESULT write_registers(struct rf24 *nrf24, uint8_t reg, const uint8_t 
     nrf24->beginTransaction(nrf24);
     CHK_BOOL(len > 0);
     nrf24->spi_txbuff[0] = W_REGISTER | (REGISTER_MASK & reg);
+    //WK_DEBUGI(RF24_TAG, "write_registerS begin status: %d\r\n", nrf24->status);
     memcpy(nrf24->spi_txbuff + 1, buf, len);
     CHK_RES(nrf24->bus->readWriteBytes(nrf24->bus, nrf24->addr, 0x00, len + 1, nrf24->spi_rxbuff, nrf24->spi_txbuff));
     nrf24->status = nrf24->spi_rxbuff[0];
+    //WK_DEBUGI(RF24_TAG, "write_registerS end status: %d\r\n", nrf24->status);
 error_exit:
     nrf24->endTransaction(nrf24);
     return res;
@@ -536,7 +540,7 @@ static WK_RESULT flush_tx(struct rf24 *nrf24)
 
 static uint8_t get_status(struct rf24 *nrf24)
 {
-    nrf24->write_register(nrf24, RF24_NOP, RF24_NOP, true);
+    nrf24->write_register(nrf24, RF24_NOP, RF24_NOP, false);
     return nrf24->status;
 }
 
@@ -1081,23 +1085,26 @@ error_exit:
 static WK_RESULT write_data(struct rf24 *nrf24, const void *buf, uint8_t len, const bool multicast)
 {
     WK_RESULT res = WK_OK;
+    int i = 0;
     //Start Writing
     CHK_RES(nrf24->startFastWrite(nrf24, buf, len, multicast, true));
-
+    //WK_DEBUGI(RF24_TAG, "write %d, status: %d\r\n", i++, nrf24->get_status(nrf24));
     while (!(nrf24->get_status(nrf24) & (_BV(TX_DS) | _BV(MAX_RT))))
         ;
-
+    //WK_DEBUGI(RF24_TAG, "write %d\r\n", i++);
     nrf24->ce(nrf24, RF_LOW);
 
     CHK_RES(nrf24->write_register(nrf24, NRF_STATUS, _BV(RX_DR) | _BV(TX_DS) | _BV(MAX_RT), false));
-
+    //WK_DEBUGI(RF24_TAG, "write %d\r\n", i++);
     //Max retries exceeded
+    //WK_DEBUGI(RF24_TAG, "write %d, status: %d\r\n", i++, nrf24->get_status(nrf24));
     if (nrf24->status & _BV(MAX_RT))
     {
         nrf24->flush_tx(nrf24); // Only going to be 1 packet in the FIFO at a time using this method, so just flush
         res = WK_RF24_W_DATA_FAIL;
         CHK_RES(res);
     }
+    //WK_DEBUGI(RF24_TAG, "write %d\r\n", i++);
 error_exit:
     return res;
 }

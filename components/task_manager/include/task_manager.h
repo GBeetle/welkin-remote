@@ -19,12 +19,7 @@
 #define _TASK_MANAGER__
 
 #include "isr_manager.h"
-#include "driver/uart.h"
-#include "soc/uart_struct.h"
-#include "hal/uart_ll.h"
 
-void uart_rx_task(void *arg);
-
-extern struct mpu mpu;
+void mpu_get_sensor_data(void* arg);
 
 #endif /* end of include guard: _TASK_MANAGER__ */

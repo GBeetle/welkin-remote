@@ -17,26 +17,7 @@
 
 #include "task_manager.h"
 
-// receive frame format 0xAA_ID_AA
-void uart_rx_task(void *arg)
+void mpu_get_sensor_data(void* arg)
 {
-    const int RX_BUF_SIZE = 1024;
-    uint8_t* data = (uint8_t*)malloc(RX_BUF_SIZE + 1);
-    while (1) {
-        const int rxBytes = uart_read_bytes(UART_NUM_0, data, RX_BUF_SIZE, 1000 / portTICK_RATE_MS);
-        if (rxBytes <= 0)
-            continue;
-        if (rxBytes != 3 || data[0] != 0xaa || data[2] != 0xaa)
-            rx_command_id = 0xff;
-        else
-            rx_command_id = data[1];
-        /*
-        if (rxBytes > 0) {
-            data[rxBytes] = 0;
-            WK_DEBUGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
-            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
-        }
-        */
-    }
-    free(data);
+
 }

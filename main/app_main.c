@@ -51,11 +51,16 @@
 #include "nrf24_interface.h"
 #include "tinyusb.h"
 #include "tusb_cdc_acm.h"
+#include "tusb_console.h"
+#include "class/cdc/cdc_device.h"
 
 #define CONFIG_TINYUSB_CDC_RX_BUFSIZE 64
 
 static const char *TAG = "example";
 static uint8_t buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
+// Used to control whether this node is sending or receiving
+bool  role    = true;  // true = TX role, false = RX role
+float payload = 0.0;
 
 void tinyusb_cdc_rx_callback(int itf, cdcacm_event_t *event)
 {
@@ -66,7 +71,7 @@ void tinyusb_cdc_rx_callback(int itf, cdcacm_event_t *event)
     esp_err_t ret = tinyusb_cdcacm_read(itf, buf, CONFIG_TINYUSB_CDC_RX_BUFSIZE, &rx_size);
     if (ret == ESP_OK) {
         buf[rx_size] = '\0';
-        ESP_LOGI(TAG, "Got data (%d bytes): %s", rx_size, buf);
+        ESP_LOGI(TAG, "Got data (%d bytes): %s, itf: %d", rx_size, buf, itf);
     } else {
         ESP_LOGE(TAG, "Read error");
     }
@@ -76,6 +81,22 @@ void tinyusb_cdc_rx_callback(int itf, cdcacm_event_t *event)
     tinyusb_cdcacm_write_flush(itf, 0);
 }
 
+void tinyusb_cdc_rx_wanted_char_callback(int itf, cdcacm_event_t *event)
+{
+    /* initialization */
+    size_t rx_size = 0;
+
+    /* read */
+    esp_err_t ret = tinyusb_cdcacm_read(itf, buf, CONFIG_TINYUSB_CDC_RX_BUFSIZE, &rx_size);
+    if (ret == ESP_OK) {
+        buf[rx_size] = '\0';
+        ESP_LOGI(TAG, "Got wanted char => data (%d bytes): %s", rx_size, buf);
+    } else {
+        ESP_LOGE(TAG, "Read error");
+    }
+}
+
+// connected / disconnected
 void tinyusb_cdc_line_state_changed_callback(int itf, cdcacm_event_t *event)
 {
     int dtr = event->line_state_changed_data.dtr;
@@ -83,21 +104,40 @@ void tinyusb_cdc_line_state_changed_callback(int itf, cdcacm_event_t *event)
     ESP_LOGI(TAG, "Line state changed! dtr:%d, rst:%d", dtr, rst);
 }
 
+void loop(void* arg)
+{
+    while (true) {
+        if (role) {
+            ESP_LOGI(TAG, "Transmission begin! ");  // payload was delivered
+            // This device is a TX node
+            WK_RESULT report = radio.write(&radio, &payload, sizeof(float));  // transmit & save the report
+
+            if (report >= 0) {
+                ESP_LOGI(TAG, "Transmission successful! ");  // payload was delivered
+                payload += 0.01;          // increment float payload
+            } else {
+                ESP_LOGI(TAG, "Transmission failed or timed out");  // payload was not delivered
+            }
+            // to make this example readable in the serial monitor
+            // slow transmissions down by 1 second
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        } else {
+            // This device is a RX node
+            uint8_t pipe;
+            if (radio.available(&radio, &pipe)) {              // is there a payload? get the pipe number that recieved it
+                uint8_t bytes = radio.getPayloadSize(&radio);  // get the size of the payload
+                radio.read(&radio, &payload, bytes);             // fetch payload from FIFO
+                ESP_LOGI(TAG, "Received data");
+            }
+        }
+    }
+}
+
 //Main application
 void app_main(void)
 {
     //fflush(stdout);
     welkin_log_system_init();
-    uart_config_t uart_config = {
-        .baud_rate  = 115200,
-        .data_bits  = UART_DATA_8_BITS,
-        .parity     = UART_PARITY_DISABLE,
-        .stop_bits  = UART_STOP_BITS_1,
-        .flow_ctrl  = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_APB,
-    };
-    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, 2*1024, 0, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_param_config(UART_NUM_0, &uart_config));
 
     ESP_LOGI(TAG, "USB initialization");
     tinyusb_config_t tusb_cfg = {}; // the configuration using default values
@@ -107,30 +147,32 @@ void app_main(void)
         .usb_dev = TINYUSB_USBDEV_0,
         .cdc_port = TINYUSB_CDC_ACM_0,
         .rx_unread_buf_sz = 64,
-        .callback_rx = &tinyusb_cdc_rx_callback, // the first way to register a callback
-        .callback_rx_wanted_char = NULL,
+        .callback_rx = NULL,
+        .callback_rx_wanted_char = &tinyusb_cdc_rx_wanted_char_callback,
         .callback_line_state_changed = NULL,
         .callback_line_coding_changed = NULL
     };
-
+    // SET wanted char => ' '
+    tud_cdc_n_set_wanted_char(amc_cfg.cdc_port, ' ');
     ESP_ERROR_CHECK(tusb_cdc_acm_init(&amc_cfg));
+    esp_tusb_init_console(TINYUSB_CDC_ACM_0); // log to usb
+
+#if 0
     /* the second way to register a callback */
     ESP_ERROR_CHECK(tinyusb_cdcacm_register_callback(
                         TINYUSB_CDC_ACM_0,
                         CDC_EVENT_LINE_STATE_CHANGED,
                         &tinyusb_cdc_line_state_changed_callback));
+#endif
     ESP_LOGI(TAG, "USB initialization DONE");
-#if 0
+
     /* test for NRF24+ commnuitation */
     rf24_init(&radio);
     // Let these addresses be used for the pair
     uint8_t address[][6] = {"1Node", "2Node"};
-    float payload = 0.0;
     // to use different addresses on a pair of radios, we need a variable to
     // uniquely identify which address this radio will use to transmit
     bool radioNumber = 1; // 0 uses address[0] to transmit, 1 uses address[1] to transmit
-    // Used to control whether this node is sending or receiving
-    bool role = false;  // true = TX role, false = RX role
 
     //radio.printDetails(&radio);
 
@@ -157,8 +199,7 @@ void app_main(void)
         CHK_EXIT(radio.startListening(&radio)); // put radio in RX mode
     }
 
-    xTaskCreate(mpu_get_sensor_data, "mpu_get_sensor_data", 2048, NULL, 2 | portPRIVILEGE_BIT, &mpu_isr_handle);
-    xTaskCreate(uart_rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES, NULL);
-    //vTaskStartScheduler();
-#endif
+    ESP_LOGI(TAG, "NRF24 initialization DONE");
+
+    xTaskCreate(loop, "nrf24_loop", 2048, NULL, 2 | portPRIVILEGE_BIT, NULL);
 }
