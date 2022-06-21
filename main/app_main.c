@@ -62,6 +62,8 @@ static uint8_t buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
 bool  role    = true;  // true = TX role, false = RX role
 float payload = 0.0;
 
+TaskHandle_t nrf24_send_task;
+
 void tinyusb_cdc_rx_callback(int itf, cdcacm_event_t *event)
 {
     /* initialization */
@@ -94,6 +96,8 @@ void tinyusb_cdc_rx_wanted_char_callback(int itf, cdcacm_event_t *event)
     } else {
         ESP_LOGE(TAG, "Read error");
     }
+
+    xTaskNotify(nrf24_send_task, 0, eNoAction);
 }
 
 // connected / disconnected
@@ -120,7 +124,7 @@ void loop(void* arg)
             }
             // to make this example readable in the serial monitor
             // slow transmissions down by 1 second
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            // vTaskDelay(1000 / portTICK_PERIOD_MS);
         } else {
             // This device is a RX node
             uint8_t pipe;
@@ -129,6 +133,20 @@ void loop(void* arg)
                 radio.read(&radio, &payload, bytes);             // fetch payload from FIFO
                 ESP_LOGI(TAG, "Received data");
             }
+        }
+        /* Wait to be notified that the transmission is complete.  Note
+        the first parameter is pdTRUE, which has the effect of clearing
+        the task's notification value back to 0, making the notification
+        value act like a binary (rather than a counting) semaphore.  */
+        uint32_t ul_notification_value;
+        const TickType_t max_block_time = pdMS_TO_TICKS( 5000 );
+        ul_notification_value = ulTaskNotifyTake(pdTRUE, max_block_time );
+
+        if( ul_notification_value == 1 ) {
+            /* The transmission ended as expected. */
+        }
+        else {
+            /* The call to ulTaskNotifyTake() timed out. */
         }
     }
 }
@@ -201,5 +219,5 @@ void app_main(void)
 
     ESP_LOGI(TAG, "NRF24 initialization DONE");
 
-    xTaskCreate(loop, "nrf24_loop", 2048, NULL, 2 | portPRIVILEGE_BIT, NULL);
+    xTaskCreate(loop, "nrf24_loop", 2048, NULL, 2 | portPRIVILEGE_BIT, &nrf24_send_task);
 }

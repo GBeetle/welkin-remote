@@ -1085,26 +1085,22 @@ error_exit:
 static WK_RESULT write_data(struct rf24 *nrf24, const void *buf, uint8_t len, const bool multicast)
 {
     WK_RESULT res = WK_OK;
-    int i = 0;
     //Start Writing
     CHK_RES(nrf24->startFastWrite(nrf24, buf, len, multicast, true));
-    //WK_DEBUGI(RF24_TAG, "write %d, status: %d\r\n", i++, nrf24->get_status(nrf24));
+    //WK_DEBUGI(RF24_TAG, "write 0, status: %d\r\n", nrf24->status);
     while (!(nrf24->get_status(nrf24) & (_BV(TX_DS) | _BV(MAX_RT))))
         ;
-    //WK_DEBUGI(RF24_TAG, "write %d\r\n", i++);
     nrf24->ce(nrf24, RF_LOW);
 
     CHK_RES(nrf24->write_register(nrf24, NRF_STATUS, _BV(RX_DR) | _BV(TX_DS) | _BV(MAX_RT), false));
-    //WK_DEBUGI(RF24_TAG, "write %d\r\n", i++);
     //Max retries exceeded
-    //WK_DEBUGI(RF24_TAG, "write %d, status: %d\r\n", i++, nrf24->get_status(nrf24));
-    if (nrf24->status & _BV(MAX_RT))
+    WK_DEBUGI(RF24_TAG, "write status: %d\r\n", nrf24->status);
+    if (nrf24->get_status(nrf24) & _BV(MAX_RT))
     {
         nrf24->flush_tx(nrf24); // Only going to be 1 packet in the FIFO at a time using this method, so just flush
         res = WK_RF24_W_DATA_FAIL;
         CHK_RES(res);
     }
-    //WK_DEBUGI(RF24_TAG, "write %d\r\n", i++);
 error_exit:
     return res;
 }
