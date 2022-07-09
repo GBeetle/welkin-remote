@@ -17,6 +17,8 @@
 
 #include "nrf24_interface.h"
 
+//#define SEND_DEBUG
+
 struct rf24 radio;
 
 static WK_RESULT begin(struct rf24 *nrf24);
@@ -280,7 +282,11 @@ static WK_RESULT _init_radio(struct rf24 *nrf24)
     // Set 1500uS (minimum for 32B payload in ESB@250KBPS) timeouts, to make testing a little easier
     // WARNING: If this is ever lowered, either 250KBS mode with AA is broken or maximum packet
     // sizes must never be used. See datasheet for a more complete explanation.
+#ifdef SEND_DEBUG
+    CHK_RES(nrf24->setRetries(nrf24, 5, 0));
+#else
     CHK_RES(nrf24->setRetries(nrf24, 5, 15));
+#endif
 
     /*
     uint8_t ret = nrf24->read_register(nrf24, SETUP_RETR);
@@ -315,8 +321,13 @@ static WK_RESULT _init_radio(struct rf24 *nrf24)
     nrf24->ack_payloads_enabled = false; // ack payloads disabled by default
     CHK_RES(nrf24->write_register(nrf24, DYNPD, 0x00, false));     // disable dynamic payloads by default (for all pipes)
     nrf24->dynamic_payloads_enabled = false;
+#ifdef SEND_DEBUG
+    CHK_RES(nrf24->write_register(nrf24, EN_AA, 0x00, false));  // disable auto-ack on all pipes
+    CHK_RES(nrf24->write_register(nrf24, EN_RXADDR, 0x00, false)); // disable all RX pipes
+#else
     CHK_RES(nrf24->write_register(nrf24, EN_AA, 0x3f, false));  // enable auto-ack on all pipes
     CHK_RES(nrf24->write_register(nrf24, EN_RXADDR, 3, false)); // only open RX pipes 0 & 1
+#endif
     CHK_RES(nrf24->setPayloadSize(nrf24, 32));           // set static payload size to 32 (max) bytes by default
     CHK_RES(nrf24->setAddressWidth(nrf24, 5));           // set default address length to (max) 5 bytes
 
@@ -476,7 +487,7 @@ static WK_RESULT write_payload(struct rf24 *nrf24, const void *buf, uint8_t data
         data_len = rf24_min(data_len, 32);
     }
 
-    WK_DEBUGD(RF24_TAG, "[Writing %u bytes %u blanks]\n", data_len, blank_len);
+    WK_DEBUGI(RF24_TAG, "[Writing %u bytes %u blanks]\n", data_len, blank_len);
 
     nrf24->beginTransaction(nrf24);
     uint8_t size = data_len + blank_len + 1; // Add register value to transmit buffer
@@ -1087,15 +1098,18 @@ static WK_RESULT write_data(struct rf24 *nrf24, const void *buf, uint8_t len, co
     WK_RESULT res = WK_OK;
     //Start Writing
     CHK_RES(nrf24->startFastWrite(nrf24, buf, len, multicast, true));
-    //WK_DEBUGI(RF24_TAG, "write 0, status: %d\r\n", nrf24->status);
+    WK_DEBUGI(RF24_TAG, "write 0, status: %02x\r\n", nrf24->status);
+    WK_DEBUGI(RF24_TAG, "fifo 0 status: %02x\r\n", nrf24->read_register(nrf24, FIFO_STATUS));
     while (!(nrf24->get_status(nrf24) & (_BV(TX_DS) | _BV(MAX_RT))))
         ;
     nrf24->ce(nrf24, RF_LOW);
 
     CHK_RES(nrf24->write_register(nrf24, NRF_STATUS, _BV(RX_DR) | _BV(TX_DS) | _BV(MAX_RT), false));
     //Max retries exceeded
-    WK_DEBUGI(RF24_TAG, "write status: %d\r\n", nrf24->status);
-    if (nrf24->get_status(nrf24) & _BV(MAX_RT))
+    WK_DEBUGI(RF24_TAG, "write status: %02x\r\n", nrf24->status);
+    WK_DEBUGI(RF24_TAG, "fifo status: %02x\r\n", nrf24->read_register(nrf24, FIFO_STATUS));
+    //nrf24->flush_tx(nrf24);
+    if (nrf24->status & _BV(MAX_RT))
     {
         nrf24->flush_tx(nrf24); // Only going to be 1 packet in the FIFO at a time using this method, so just flush
         res = WK_RF24_W_DATA_FAIL;
@@ -1190,12 +1204,17 @@ static WK_RESULT writeFast(struct rf24 *nrf24, const void *buf, uint8_t len)
 //Also, we remove the need to keep writing the config register over and over and delaying for 150 us each time if sending a stream of data
 
 static WK_RESULT startFastWrite(struct rf24 *nrf24, const void *buf, uint8_t len, const bool multicast, bool startTx)
-{ //TMRh20
+{
+    WK_RESULT res = WK_OK;
+
+    CHK_RES(nrf24->write_payload(nrf24, buf, len, multicast ? W_TX_PAYLOAD_NO_ACK : W_TX_PAYLOAD));
+    //TMRh20
     if (startTx)
     {
         nrf24->ce(nrf24, RF_HIGH);
     }
-    return nrf24->write_payload(nrf24, buf, len, multicast ? W_TX_PAYLOAD_NO_ACK : W_TX_PAYLOAD);
+error_exit:
+    return res;
 }
 
 /****************************************************************************/
@@ -1368,7 +1387,9 @@ static WK_RESULT openWritingPipeAddr(struct rf24 *nrf24, const uint8_t *address)
     WK_RESULT res = WK_OK;
     // Note that AVR 8-bit uC's store this LSB first, and the NRF24L01(+)
     // expects it LSB first too, so we're good.
+#ifndef SEND_DEBUG
     CHK_RES(nrf24->write_registers(nrf24, RX_ADDR_P0, address, nrf24->addr_width));
+#endif
     CHK_RES(nrf24->write_registers(nrf24, TX_ADDR, address, nrf24->addr_width));
 error_exit:
     return res;
