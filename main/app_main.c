@@ -117,7 +117,7 @@ void loop(void* arg)
             WK_RESULT report = radio.write(&radio, &payload, sizeof(float));  // transmit & save the report
 
             if (report >= 0) {
-                ESP_LOGI(TAG, "Transmission successful! ");  // payload was delivered
+                ESP_LOGI(TAG, "Transmission successful!, config: %02x, data: %f", radio.read_register(&radio, NRF_CONFIG), payload);  // payload was delivered
                 payload += 0.01;          // increment float payload
             } else {
                 ESP_LOGI(TAG, "Transmission failed or timed out");  // payload was not delivered
@@ -204,6 +204,8 @@ void app_main(void)
     // number of bytes we need to transmit a float
     CHK_EXIT(radio.setPayloadSize(&radio, sizeof(payload))); // float datatype occupies 4 bytes
 
+    //CHK_EXIT(radio.maskIRQ(&radio, true, true, true));
+
     // set the TX address of the RX node into the TX pipe
     CHK_EXIT(radio.openWritingPipeAddr(&radio, address[radioNumber]));     // always uses pipe 0
 
@@ -217,7 +219,7 @@ void app_main(void)
         CHK_EXIT(radio.startListening(&radio)); // put radio in RX mode
     }
 
-    ESP_LOGI(TAG, "NRF24 initialization DONE");
+    ESP_LOGI(TAG, "NRF24 initialization DONE, config: %02x", radio.read_register(&radio, NRF_CONFIG));
 
     xTaskCreate(loop, "nrf24_loop", 2048, NULL, 2 | portPRIVILEGE_BIT, &nrf24_send_task);
 }

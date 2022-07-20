@@ -1296,9 +1296,9 @@ static bool txStandByAfter(struct rf24 *nrf24, uint32_t timeout, bool startTx)
 static WK_RESULT maskIRQ(struct rf24 *nrf24, bool tx, bool fail, bool rx)
 {
     /* clear the interrupt flags */
-    nrf24->config_reg = (nrf24->config_reg & ~(1 << MASK_MAX_RT | 1 << MASK_TX_DS | 1 << MASK_RX_DR));
+    nrf24->config_reg = (nrf24->config_reg & (1 << MASK_MAX_RT | 1 << MASK_TX_DS | 1 << MASK_RX_DR));
     /* set the specified interrupt flags */
-    nrf24->config_reg = (nrf24->config_reg | fail << MASK_MAX_RT | tx << MASK_TX_DS | rx << MASK_RX_DR);
+    nrf24->config_reg = (nrf24->config_reg | ~(fail << MASK_MAX_RT | tx << MASK_TX_DS | rx << MASK_RX_DR));
     return nrf24->write_register(nrf24, NRF_CONFIG, nrf24->config_reg, false);
 }
 
